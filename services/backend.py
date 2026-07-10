@@ -154,7 +154,9 @@ async def upload_config_file(file: UploadFile = File(...)):
             matlab_cmd = (
                 f"S = load('{temp_path}'); "
                 f"if isfield(S, 'busRoleConfig') "
-                f"  writetable(S.busRoleConfig, '{temp_excel_path}', 'Sheet', 'bus_role_config'); "
+                f"  cfg = S.busRoleConfig; "
+                f"  if isstruct(cfg), cfg = struct2table(cfg); end; "
+                f"  writetable(cfg, '{temp_excel_path}', 'Sheet', 'bus_role_config'); "
                 f"else "
                 f"  error('MAT file does not contain busRoleConfig'); "
                 f"end; "
