@@ -7,16 +7,41 @@ SET WORK_DIR=%~dp0
 cd /d "%WORK_DIR%"
 
 :: Create the virtual environment in a shorter path to avoid Windows MAX_PATH (WinError 206) issues
-SET VENV_DIR=C:\Users\Erdemhan\venv_abm-dlmp
+:: %USERPROFILE% automatically resolves to C:\Users\<Username> on any Windows machine
+SET VENV_DIR=%USERPROFILE%\venv_abm-dlmp
 
 echo ==================================================
 echo   DLMP Agent-Based Simulation Launcher
 echo ==================================================
 
+:: Detect Python executable dynamically
+SET PYTHON_CMD=
+where python >nul 2>nul
+if !errorlevel! eq 0 (
+    SET PYTHON_CMD=python
+)
+if not defined PYTHON_CMD (
+    where py >nul 2>nul
+    if !errorlevel! eq 0 (
+        SET PYTHON_CMD=py
+    )
+)
+if not defined PYTHON_CMD (
+    if exist "E:\Anaconda\envs\abmem\python.exe" (
+        SET PYTHON_CMD=E:\Anaconda\envs\abmem\python.exe
+    )
+)
+if not defined PYTHON_CMD (
+    echo [ERROR] Python could not be detected on this system!
+    echo Lütfen Python'un yüklü ve PATH'e ekli olduğundan emin olun.
+    pause
+    exit /b 1
+)
+
 :: Check if virtual environment exists
 if not exist "%VENV_DIR%" (
     echo [INFO] Creating virtual environment in a short path: %VENV_DIR%
-    E:\Anaconda\envs\abmem\python.exe -m venv "%VENV_DIR%"
+    "%PYTHON_CMD%" -m venv "%VENV_DIR%"
     if !errorlevel! neq 0 (
         echo [ERROR] Failed to create virtual environment.
         pause
