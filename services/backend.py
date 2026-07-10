@@ -220,7 +220,10 @@ async def upload_config_file(file: UploadFile = File(...)):
         ]
         for col in required_cols:
             if col not in parsed_df.columns:
-                raise HTTPException(status_code=400, detail=f"Eksik sütun: {col}")
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Yüklediğiniz Excel/MAT dosyası geçerli bir bara konfigürasyonu içermiyor. Eksik sütun: '{col}'. Lütfen doğru formatta bir şablon dosyası yükleyin."
+                )
 
         state.global_config_df = parsed_df
         return state.global_config_df.to_dict(orient="records")
