@@ -68,6 +68,48 @@ def sample_by_pdf(min_val, max_val, pdf_name="Uniform"):
     return min_val + width * min(1.0, max(0.0, x))
 
 
+def clean_mat_column(col_data):
+    import numpy as np
+    if not isinstance(col_data, np.ndarray):
+        return [decode_val(col_data)]
+    cleaned = []
+    # Eger 2 boyutlu character array ise (MATLAB char matrisi)
+    if col_data.dtype.kind in ['U', 'S', 'b'] and col_data.ndim == 2:
+        for row in col_data:
+            s = "".join(c.decode('utf-8') if isinstance(c, bytes) else str(c) for c in row)
+            cleaned.append(s.strip())
+        return cleaned
+    # Diğer durumlarda (cell array veya numeric array)
+    flat = col_data.flatten()
+    for item in flat:
+        cleaned.append(decode_val(item))
+    return cleaned
+
+
+def decode_val(val):
+    import numpy as np
+    if val is None:
+        return ""
+    if isinstance(val, (bytes, str)):
+        return val.decode('utf-8').strip() if isinstance(val, bytes) else val.strip()
+    if isinstance(val, (int, float, np.integer, np.floating)):
+        return float(val) if isinstance(val, (float, np.floating)) else int(val)
+    if isinstance(val, np.ndarray):
+        if val.ndim == 0:
+            return decode_val(val.item())
+        if val.dtype.kind in ['U', 'S', 'b']:
+            if val.ndim == 1:
+                s = "".join(c.decode('utf-8') if isinstance(c, bytes) else str(c) for c in val)
+                return s.strip()
+            elif val.ndim == 2 and val.shape[0] == 1:
+                s = "".join(c.decode('utf-8') if isinstance(c, bytes) else str(c) for c in val[0])
+                return s.strip()
+        if val.size > 0:
+            return decode_val(val.flat[0])
+        return ""
+    return str(val).strip()
+
+
 def load_config(file_path, filename=None):
     """
     Excel (.xlsx) veya MATLAB (.mat) dosyasından veya akışından bara rollerini ve ayarlarını yükler
@@ -91,10 +133,7 @@ def load_config(file_path, filename=None):
             data_dict = {}
             for name in names:
                 col_data = mat_struct[name][0, 0]
-                if col_data.dtype.kind in ['U', 'S']:
-                    data_dict[name] = [str(x[0]).strip() if len(x) > 0 else "" for x in col_data]
-                else:
-                    data_dict[name] = col_data.flatten()
+                data_dict[name] = clean_mat_column(col_data)
             df = pd.DataFrame(data_dict)
         else:
             raise ValueError("MAT dosyası içerisinde 'busRoleConfig' değişkeni bulunamadı!")
