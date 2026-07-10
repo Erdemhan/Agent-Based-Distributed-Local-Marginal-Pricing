@@ -25,7 +25,7 @@ from services.matlab_runner import run_matlab_command
 from services.excel_exporter import export_scenarios_to_excel
 from services.regressions import run_ols_models
 from services.plot_builder import build_plot_data, build_overview_plots
-from services.simulation import run_simulation as _run_simulation
+from services.simulation import run_simulation as _run_simulation, _sanitize
 
 # ---------------------------------------------------------------------------
 # Application setup
@@ -435,7 +435,7 @@ async def upload_results_file(file: UploadFile = File(...)):
             f"[{ts}] Done. Data loaded and charts updated."
         ]
 
-        return {
+        return _sanitize({
             "status": "success",
             "logs": upload_logs,
             "summary": {
@@ -453,7 +453,7 @@ async def upload_results_file(file: UploadFile = File(...)):
             "overview_plots": overview_plots,
             "validation_fail_reasons": val_fail_reasons,
             "summary_table": df_sum.to_dict(orient="records")
-        }
+        })
 
 
     except Exception as e:
