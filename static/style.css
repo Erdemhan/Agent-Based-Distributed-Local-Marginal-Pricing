@@ -96,6 +96,16 @@ body {
     box-shadow: 0 4px 10px rgba(201, 74, 73, 0.2);
 }
 
+.btn-warning {
+    background-color: #d28640; /* soft amber/ochre matching sage green theme */
+    color: #FFFFFF;
+}
+
+.btn-warning:hover {
+    background-color: #b36b2f;
+    box-shadow: 0 4px 10px rgba(210, 134, 64, 0.2);
+}
+
 .btn-success {
     background-color: #2E7D32;
     color: #FFFFFF;

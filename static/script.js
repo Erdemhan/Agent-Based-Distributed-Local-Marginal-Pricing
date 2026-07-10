@@ -430,6 +430,8 @@ async function initDefaultConfig() {
         sessionStorage.removeItem("abm_dlmp_results");
         sessionStorage.removeItem("abm_dlmp_console_log");
         sessionStorage.removeItem("abm_dlmp_console_status");
+        sessionStorage.removeItem("abm_dlmp_inputs");
+        sessionStorage.removeItem("abm_dlmp_config_status");
         simulationResults = null;
 
         await fetch("/api/config/update", {
