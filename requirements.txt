@@ -1,10 +1,17 @@
+# === Core Web Framework ===
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.0.0
+
+# === Power System Simulation ===
 pandapower>=2.14.0
-streamlit>=1.30.0
-ray[rllib]>=2.9.0
-torch>=2.1.0
+
+# === Data Processing ===
 pandas>=2.0.0
 numpy>=1.24.0
+scipy>=1.11.0
 openpyxl>=3.1.0
-plotly>=5.18.0
-numba>=0.58.0
 
+# === Legacy Streamlit Interface (app.py) ===
+streamlit>=1.30.0
+plotly>=5.18.0
