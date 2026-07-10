@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>case33bw DLMP Stochastic Scenario Lab (tekil-simulasyon)</title>
+    <!-- Google Fonts Inter & Outfit -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- CSS link -->
+    <link rel="stylesheet" href="style.css?v=20">
+
+
+
+
+
+</head>
+<body>
+    <!-- Top Action Header (image.png layout) -->
+    <header class="app-header">
+        <div class="header-actions">
+            <button id="btn-simulate" class="btn btn-primary">Generate Scenarios + Analyze</button>
+            <button id="btn-stop" class="btn btn-danger" disabled>Stop Generation</button>
+            <button id="btn-save-config" class="btn btn-secondary">Save Custom Config</button>
+            <button id="btn-load-config" class="btn btn-secondary">Load Custom Config</button>
+            <button id="btn-load-excel" class="btn btn-secondary">Load Existing Excel + Analyze</button>
+            <button id="btn-export-excel" class="btn btn-success" disabled>Save Current Results to Excel</button>
+        </div>
+        <div class="header-status">
+            <span id="app-status-text">Config: <strong id="config-status-label">Default</strong></span>
+            <!-- Progress Bar Container -->
+            <div id="simulation-progress-container" style="display: none; align-items: center; gap: 8px; border-left: 1px solid #D3D0C6; padding-left: 8px; margin-left: 4px;">
+                <span id="simulation-progress-text" style="font-weight: bold; color: #4A5D4E; white-space: nowrap;">0 / 400</span>
+                <div class="progress-bar-bg" style="width: 100px; height: 8px; background-color: #D3D0C6; border-radius: 4px; overflow: hidden; border: 1px solid #C4C0B6;">
+                    <div id="simulation-progress-fill" style="width: 0%; height: 100%; background-color: #6C8E75; transition: width 0.1s ease-out;"></div>
+                </div>
+            </div>
+        </div>
+
+    </header>
+
+    <div class="app-container">
+        <!-- Left Sidebar: Controls & Settings -->
+        <aside class="app-sidebar" id="sidebar-panel">
+            <h3 id="sidebar-title">Context Controls | Network Topology</h3>
+            
+            <!-- MATPOWER Case & Output selectors -->
+            <div id="card-case-selectors" class="sidebar-card">
+                <div class="form-group">
+                    <label for="case-select">MATPOWER case</label>
+                    <select id="case-select">
+                        <option value="case33bw" selected>case33bw</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="output-format-select">Output format</label>
+                    <select id="output-format-select">
+                        <option value="Wide Scenario Format" selected>Wide Scenario Format</option>
+                        <option value="Current Long Format">Current Long Format</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Scenario Generator selector -->
+            <div class="sidebar-card" style="padding: 8px 12px; display: flex; align-items: center; gap: 10px; justify-content: space-between;">
+                <label style="font-weight: 600; font-size: 12px; color: #3A474D; white-space: nowrap;">Scenario Generator</label>
+                <div style="display: flex; background: #EAE9E3; border: 1px solid #D3D0C6; border-radius: 6px; overflow: hidden; font-size: 11px; font-weight: 600;">
+                    <label id="gen-label-matlab" style="padding: 5px 12px; cursor: pointer; background: #4A5D4E; color: #fff; transition: background 0.2s;">
+                        <input type="radio" id="gen-matlab" name="scenario_generator" value="matlab" checked style="display:none;">
+                        MATLAB
+                    </label>
+                    <label id="gen-label-python" style="padding: 5px 12px; cursor: pointer; color: #3A474D; transition: background 0.2s;">
+                        <input type="radio" id="gen-python" name="scenario_generator" value="python" style="display:none;">
+                        Python
+                    </label>
+                </div>
+            </div>
+
+            <!-- Section 1: Scenario Settings -->
+            <div id="card-scenario-settings" class="sidebar-card">
+                <h2>Scenario settings</h2>
+                <div class="form-group">
+                    <label for="time-select">Case time</label>
+                    <select id="time-select">
+                        <option value="Gece">Gece</option>
+                        <option value="Öğleden önce">Öğleden önce</option>
+                        <option value="Öğle" selected>Öğle</option>
+                        <option value="Akşam üstü">Akşam üstü</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="season-select">Season</label>
+                    <select id="season-select">
+                        <option value="Kış">Kış</option>
+                        <option value="Yaz">Yaz</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="policy-select">Prosumer Policy</label>
+                    <select id="policy-select">
+                        <option value="Feed-in" selected>Feed-in</option>
+                        <option value="Öztüketim">Öztüketim</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="scenario-count">Scenario count</label>
+                    <input type="number" id="scenario-count" value="400" min="1" max="1000">
+                </div>
+                <div class="form-group">
+                    <label for="random-seed">Random seed</label>
+                    <input type="number" id="random-seed" value="42" min="1">
+                </div>
+                <div class="form-group">
+                    <label for="load-scale-range">Global load scale</label>
+                    <input type="text" id="load-scale-range" value="0.85, 1.15">
+                </div>
+                <div class="form-group">
+                    <label for="load-scale-pdf">Global Load Scale PDF</label>
+                    <select id="load-scale-pdf">
+                        <option value="Normal-Truncated" selected>Normal-Truncated</option>
+                        <option value="Uniform">Uniform</option>
+                        <option value="Triangular">Triangular</option>
+                        <option value="Beta(2,2)-Bounded">Beta(2,2)-Bounded</option>
+                        <option value="Lognormal-Truncated">Lognormal-Truncated</option>
+                        <option value="Two-Peak Mixture">Two-Peak Mixture</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="offer-pdf">Offer c2/c1 PDF</label>
+                    <select id="offer-pdf">
+                        <option value="Normal-Truncated" selected>Normal-Truncated</option>
+                        <option value="Uniform">Uniform</option>
+                        <option value="Triangular">Triangular</option>
+                        <option value="Beta(2,2)-Bounded">Beta(2,2)-Bounded</option>
+                        <option value="Lognormal-Truncated">Lognormal-Truncated</option>
+                        <option value="Two-Peak Mixture">Two-Peak Mixture</option>
+                    </select>
+                </div>
+            </div>
+
+
+            <!-- Section 3: Dynamic Plot Bus Selectors -->
+            <div id="card-plot-selectors" class="sidebar-card" style="display:none;">
+                <h2>Plot Selectors</h2>
+                <div class="form-group">
+                    <label for="plot-bus-a">Plot Bus A</label>
+                    <select id="plot-bus-a" class="bus-selector-sync"></select>
+                </div>
+                <div class="form-group">
+                    <label for="plot-bus-b">Plot Bus B</label>
+                    <select id="plot-bus-b" class="bus-selector-sync"></select>
+                </div>
+                <div class="form-group">
+                    <label for="plot-bus-c">Plot Bus C</label>
+                    <select id="plot-bus-c" class="bus-selector-sync"></select>
+                </div>
+            </div>
+
+            <!-- Section 4: Validation & Export Settings -->
+            <div id="card-validation-export" class="sidebar-card" style="display:none;">
+                <h2>Validation & Export</h2>
+                <div class="form-group checkbox-group" id="run-validation-group">
+                    <input type="checkbox" id="run-validation-check" checked>
+                    <label for="run-validation-check">Run validation check (RUNPF)</label>
+                </div>
+                <div class="form-group">
+                    <label for="output-excel-file">Output Excel file</label>
+                    <input type="text" id="output-excel-file" value="case33bw_dlmp_scenarios.xlsx">
+                </div>
+            </div>
+            
+            <!-- Section 5: Context Info Panel (MATLAB text area look) -->
+            <div id="card-context-info" class="sidebar-card" style="display:none;">
+                <textarea id="sidebar-context-info" readonly style="width: 100%; height: 210px; font-family: Consolas, monospace; font-size: 11px; padding: 6px; border: 1px solid #D3D0C6; border-radius: 4px; background-color: #FFFFFF; color: #2A3439; resize: none; line-height: 1.4;"></textarea>
+            </div>
+
+            <!-- Persistent MATLAB-style Console Status & Logs -->
+            <div id="card-persistent-console" class="sidebar-card card-console">
+                <div id="console-status-header" style="font-weight: bold; font-size: 13px; margin-bottom: 2px; color: #2A3439; font-family: 'Inter', sans-serif;">Ready. Configure bus roles and run.</div>
+                <textarea id="console-log-area" readonly style="width: 100%; height: 180px; font-family: Consolas, monospace; font-size: 11px; padding: 6px; border: 1px solid #D3D0C6; border-radius: 4px; background-color: #FFFFFF; color: #2A3439; resize: none; line-height: 1.4;">Ready. Configure bus roles and run.</textarea>
+            </div>
+
+            <div class="sidebar-card hidden-uploader" style="display:none;">
+                <input type="file" id="config-file-uploader" accept=".mat, .xlsx, .xls" style="display:none;">
+
+            </div>
+        </aside>
+
+
+        <!-- Right Main Content Panel -->
+        <main class="app-main">
+            <!-- Tabs Navigation -->
+            <div class="tabs-header">
+                <button class="tab-btn active" onclick="switchTab('tab-topology')">Network Topology</button>
+                <button class="tab-btn" onclick="switchTab('tab-overview')">Overview</button>
+                <button class="tab-btn" onclick="switchTab('tab-econometric')">Econometric Outputs</button>
+                <button class="tab-btn" onclick="switchTab('tab-validation')">Validation Diagnostics</button>
+                <button class="tab-btn" onclick="switchTab('tab-preview')">Data Preview</button>
+                <button class="tab-btn" onclick="switchTab('tab-bulk-editor')">Bus Role Editor</button>
+            </div>
+
+            <!-- Tabs Panels -->
+            <div class="tabs-content">
+                <!-- 1. Network Topology Tab -->
+                <div id="tab-topology" class="tab-panel active">
+                    <div class="topology-layout">
+                        <div class="topology-canvas-area">
+                            <h3 class="canvas-title">case33bw Network Topology with User-Defined Bus Roles</h3>
+                            <div class="svg-container">
+                                <svg id="bus-topology-svg" viewBox="0 0 500 800" width="100%" height="100%"></svg>
+                            </div>
+                        </div>
+                        <div class="topology-right-area">
+                            <!-- Quick Bus Role Editor -->
+                            <div id="card-quick-editor" class="topology-editor-panel">
+                                <div class="editor-header">Quick Bus Role Editor</div>
+                                <div class="form-group">
+                                    <label for="editor-bus-id">Selected Bus</label>
+                                    <select id="editor-bus-id"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="bus-role">Role Settings</label>
+                                    <select id="bus-role">
+                                        <option value="PQ Load">PQ Load</option>
+                                        <option value="DER">DER</option>
+                                        <option value="Prosumer">Prosumer</option>
+                                        <option value="Slack/Grid">Slack/Grid</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="bus-add-pd">Fixed Added Pd [MW]</label>
+                                    <input type="number" id="bus-add-pd" step="0.01" value="0.0" min="0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="bus-pf">Fixed Added PF</label>
+                                    <input type="number" id="bus-pf" step="0.01" value="0.95" min="0.01" max="1.0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="bus-p-limits">Pmin/Pmax Limits [MW]</label>
+                                    <input type="text" id="bus-p-limits" value="0, 0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="bus-q-limits">Qmin/Qmax [MVAR]</label>
+                                    <input type="text" id="bus-q-limits" value="0, 0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="bus-v-limits">Vmin/Vmax [p.u.]</label>
+                                    <input type="text" id="bus-v-limits" value="0.9, 1.1" disabled>
+                                </div>
+                                <div class="form-group">
+                                    <label for="bus-c2-range">c2 range</label>
+                                    <input type="text" id="bus-c2-range" value="0, 0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="bus-c1-range">c1 range</label>
+                                    <input type="text" id="bus-c1-range" value="0, 0">
+                                </div>
+                                <div class="form-group">
+                                    <label for="bus-c0-constant">c0</label>
+                                    <input type="number" id="bus-c0-constant" step="0.1" value="0.0">
+                                </div>
+                                <button id="btn-apply-role" class="btn btn-wide btn-secondary">Apply Selected Bus Role</button>
+                                <button id="btn-reset-roles" class="btn btn-wide btn-danger">Reset All Roles to Loaded Case Base</button>
+                            </div>
+
+                            <!-- Legend + Details -->
+                            <div class="topology-legend-area">
+                                <!-- Card 2: Legend -->
+                                <div class="topology-sub-card">
+                                    <div class="legend-header">Topology Legend</div>
+                                    <div class="legend-item"><span class="dot dot-slack"></span> Slack/Grid (SLK)</div>
+                                    <div class="legend-item"><span class="dot dot-pq"></span> PQ Load (PQ)</div>
+                                    <div class="legend-item"><span class="dot dot-der"></span> DER / PV Bus (DER)</div>
+                                    <div class="legend-item"><span class="dot dot-prosumer"></span> Prosumer / PV Bus (PRO)</div>
+                                    <div class="legend-item legend-plot-label"><span class="letter-purple">A...</span> Selected Plot Bus Label</div>
+                                    <div class="legend-hint">
+                                        <p>Click a bus on the topology to inspect it.</p>
+                                        <p>Selected plot buses keep their role marker; only the text label appends | A, | B, or | C and turns purple.</p>
+                                        <p>Branch data comes from mpc.branch.</p>
+                                        <p>Bus roles are user-defined.</p>
+                                        <p>OPF uses the generated mpc struct.</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- Card 3: Selected Bus Details -->
+                                <div class="topology-sub-card details-card">
+                                    <div class="details-header"><span class="info-icon">i</span> Selected Bus Details</div>
+                                    <div class="details-hint">Shows base demand, role settings, generation limits, and latest OPF output.</div>
+                                    <textarea id="topology-text-summary" readonly></textarea>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Overview Plots Tab -->
+                <div id="tab-overview" class="tab-panel">
+                    <div class="card">
+                        <h2>📊 Sistem Genel Dağılımları ve Profilleri</h2>
+                        <div class="charts-grid-4">
+                            <div class="chart-box">
+                                <h3>Total Demand (Pd) Distribution</h3>
+                                <canvas id="chart-pd-hist"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h3>Selected Bus Active DLMP Distribution</h3>
+                                <canvas id="chart-dlmp-hist"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h3>Voltage Mean / Min / Max by Bus</h3>
+                                <canvas id="chart-voltage-bounds"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h3>Maximum Branch Loading by Scenario</h3>
+                                <canvas id="chart-branch-loading-mean"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Econometric Outputs Tab -->
+                <div id="tab-econometric" class="tab-panel">
+                    <div class="card">
+                        <h2>📈 Ekonometrik OLS Regresyon Analiz Çıktıları</h2>
+                        <div class="charts-grid-6">
+                            <div class="chart-box">
+                                <h3 id="ttl-ols-a">Bus A Active DLMP vs Total Demand</h3>
+                                <canvas id="chart-dlmp-vs-demand-a"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h3 id="ttl-ols-b">Bus B Active DLMP vs Total Demand</h3>
+                                <canvas id="chart-dlmp-vs-demand-b"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h3 id="ttl-ols-c">Bus C Active DLMP vs Total Demand</h3>
+                                <canvas id="chart-dlmp-vs-demand-c"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h3>Objective Cost vs Total Demand</h3>
+                                <canvas id="chart-cost-vs-demand"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h3>Losses vs Total Demand</h3>
+                                <canvas id="chart-losses-vs-demand"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h3>C2L vs Total Demand</h3>
+                                <canvas id="chart-c2l-vs-demand"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="ols-summary-container margin-top">
+                            <h3>📋 En Küçük Kareler (OLS) Regresyon Sonuçları</h3>
+                            <div class="table-scroll-container">
+                                <table id="ols-results-table" class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Model</th>
+                                            <th>Bağımlı Değişken (Dependent)</th>
+                                            <th>Model Formülü</th>
+                                            <th>Katsayılar (Coefficients)</th>
+                                            <th>R-Kare (R²)</th>
+                                            <th>RMSE</th>
+                                            <th>N</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr><td colspan="7" class="placeholder-text">Lütfen önce simülasyonu çalıştırın.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Validation Diagnostics Tab -->
+                <div id="tab-validation" class="tab-panel">
+                    <div class="card">
+                        <h2>🔍 RUNPF Doğrulama ve Tutarlılık Teşhisleri</h2>
+                        <div class="charts-row">
+                            <div class="chart-box">
+                                <h3>Validation Error Magnitude Severity</h3>
+                                <canvas id="chart-val-severity"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h3>Primary Validation Failure Reasons</h3>
+                                <canvas id="chart-val-failures"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="validation-summary-container margin-top">
+                            <div class="preview-header">
+                                <h3>📋 Detaylı Doğrulama Veri Tablosu</h3>
+                            </div>
+                            <div class="table-scroll-container margin-top">
+                                <table id="validation-preview-table" class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Senaryo ID</th>
+                                            <th>PF Yakınsama</th>
+                                            <th>Doğrulama Sonucu</th>
+                                            <th>Hata Nedeni</th>
+                                            <th>Max Vm Hatası (pu)</th>
+                                            <th>Max Va Hatası (deg)</th>
+                                            <th>Max Flow P Hatası (MW)</th>
+                                            <th>Max Yüklenme Hatası (%)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr><td colspan="8" class="placeholder-text">Lütfen önce simülasyonu çalıştırın.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <!-- Pagination Controls at the Bottom -->
+                            <div class="pagination-container" style="display: flex; justify-content: center; gap: 15px; align-items: center; margin-top: 12px; padding-top: 8px; border-top: 1px solid #D3D0C6;">
+                                <button id="btn-val-prev" class="btn btn-secondary" style="padding: 5px 12px; font-size: 12px;">« Geri</button>
+                                <span id="val-page-indicator" style="font-size: 13px; font-weight: 600; color: #2A3439; min-width: 100px; text-align: center;">Sayfa 1 / 1</span>
+                                <button id="btn-val-next" class="btn btn-secondary" style="padding: 5px 12px; font-size: 12px;">İleri »</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. Data Preview Tab -->
+                <div id="tab-preview" class="tab-panel">
+                    <div class="card">
+                        <div class="preview-header">
+                            <h2>👁️ Simülasyon Verisi Önizleme Paneli</h2>
+                            <div style="display: flex; gap: 15px; align-items: center;">
+                                <div class="form-group-inline">
+                                    <label for="preview-table-select">Gösterilecek Tablo:</label>
+                                    <select id="preview-table-select" style="width: 200px;">
+                                        <option value="summary">Senaryo Özet Tablosu</option>
+                                        <option value="buses">Bara Sonuçları Tablosu</option>
+                                        <option value="branches">Hat Sonuçları Tablosu</option>
+                                        <option value="generators">Jeneratör Sonuçları Tablosu</option>
+                                    </select>
+                                </div>
+                                <div class="form-group-inline" id="preview-scenario-filter-wrapper">
+                                    <label for="preview-scenario-select">Senaryo Seçimi:</label>
+                                    <select id="preview-scenario-select" style="width: 140px;">
+                                        <option value="all">Tüm Senaryolar</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="table-scroll-container margin-top">
+                            <table id="preview-data-table" class="data-table">
+                                <thead>
+                                    <!-- Dynamic headers will be injected -->
+                                </thead>
+                                <tbody>
+                                    <tr><td class="placeholder-text">Lütfen önce simülasyonu çalıştırın.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 6. Bus Role Editor (Bulk Grid) Tab -->
+                <div id="tab-bulk-editor" class="tab-panel">
+                    <div class="card card-bulk">
+                        <div class="preview-header">
+                            <div>
+                                <h2>✏️ Toplu Bara Rol ve Parametre Düzenleme Listesi <span id="bulk-save-status" style="font-size: 11px; font-weight: normal; margin-left: 10px; color: #6B7280;">✓ Değişiklikler otomatik kaydedilir</span></h2>
+                                <p class="subtitle" style="margin-bottom: 0;">Tüm baralara ait rol ve limitleri topluca görerek satır satır düzenleyebilirsiniz.</p>
+                            </div>
+                            <button id="btn-save-bulk-config" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;">Değişiklikleri Kaydet & Uygula</button>
+                        </div>
+                        <div class="table-scroll-container margin-top">
+                            <table id="bulk-edit-table" class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Bara ID</th>
+                                        <th>Rol</th>
+                                        <th>Ek Pd (MW)</th>
+                                        <th>pf</th>
+                                        <th>Vmin (pu)</th>
+                                        <th>Vmax (pu)</th>
+                                        <th>Pmin (MW)</th>
+                                        <th>Pmax (MW)</th>
+                                        <th>Qmin (MVAr)</th>
+                                        <th>Qmax (MVAr)</th>
+                                        <th>c2 Min</th>
+                                        <th>c2 Max</th>
+                                        <th>c1 Min</th>
+                                        <th>c1 Max</th>
+                                        <th>c0</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- JS script -->
+    <script src="script.js?v=48"></script>
+</body>
+</html>

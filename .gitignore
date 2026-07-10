@@ -1,0 +1,109 @@
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+wheels/
+*.whl
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env
+C:\Users\*\venv_abm-dlmp/
+
+# ========================
+# Jupyter / IPython
+# ========================
+.ipynb_checkpoints
+*.ipynb
+
+# ========================
+# IDE & Editor
+# ========================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# ========================
+# OS
+# ========================
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ========================
+# MATLAB
+# ========================
+*.asv
+*.mex*
+*.mlx
+*.mlapp
+*.mat
+*.fig
+slprj/
+sccprj/
+codegen/
+*.slx.autosave
+
+# ========================
+# Geçici / Çalışma Dosyaları
+# ========================
+temp_*.xlsx
+temp_*.mat
+bus_role_config.mat
+debug_opf_failed.txt
+*.log
+*.tmp
+*.bak
+
+# ========================
+# Simülasyon Çıktıları (Büyük dosyalar)
+# ========================
+*.xlsx
+!requirements*.txt
+
+# ========================
+# Docker
+# ========================
+.dockerignore
+
+# ========================
+# Streamlit
+# ========================
+.streamlit/secrets.toml
+
+# ========================
+# Proje içi gizli notlar
+# ========================
+*.md.bak
+abm-mimari.md
+abm.md
+generate_scenarios_debug.m
+
+# ========================
+# Antigravity / Agent IDE
+# ========================
+.agents/

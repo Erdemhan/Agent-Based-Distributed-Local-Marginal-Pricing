@@ -1,0 +1,438 @@
+"""
+DLMP ABM Stochastic Scenario Lab - FastAPI Backend (Controller Layer)
+
+This file is intentionally thin: it only declares HTTP routes and delegates
+all business logic to the services/ package. Follow Single Responsibility
+Principle — API routing is the only responsibility of this module.
+"""
+
+import io
+import os
+import shutil
+
+import pandas as pd
+import pandapower as pp
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from typing import List
+
+from utils.data_io import load_config, generate_default_template
+
+import services.state as state
+from services.matlab_runner import run_matlab_command
+from services.excel_exporter import export_scenarios_to_excel
+from services.regressions import run_ols_models
+from services.plot_builder import build_plot_data, build_overview_plots
+from services.simulation import run_simulation as _run_simulation
+
+# ---------------------------------------------------------------------------
+# Application setup
+# ---------------------------------------------------------------------------
+
+app = FastAPI(title="DLMP ABM Stochastic Scenario Lab Backend")
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+os.makedirs(STATIC_DIR, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Default configuration initialisation
+# ---------------------------------------------------------------------------
+
+def _init_default_config():
+    rows = []
+    for bus_id in range(1, 34):
+        role = "Slack/Grid" if bus_id == 1 else "PQ Load"
+        c2_val = 0.020 if bus_id == 1 else 0.0
+        c1_val = 80.0 if bus_id == 1 else 0.0
+        rows.append({
+            "bus_id": bus_id,
+            "role": role,
+            "add_Pd_MW": 0.0,
+            "pf": 0.95 if bus_id != 1 else 1.0,
+            "Vmin_pu": 0.90,
+            "Vmax_pu": 1.05,
+            "Pmin_MW": 0.0,
+            "Pmax_MW": 100.0 if bus_id == 1 else 0.0,
+            "Qmin_MVAr": -100.0 if bus_id == 1 else 0.0,
+            "Qmax_MVAr": 100.0 if bus_id == 1 else 0.0,
+            "c2_min": c2_val,
+            "c2_max": c2_val,
+            "c1_min": c1_val,
+            "c1_max": c1_val,
+            "c0": 0.0,
+        })
+    state.global_config_df = pd.DataFrame(rows)
+
+
+_init_default_config()
+
+
+# ---------------------------------------------------------------------------
+# Pydantic request models
+# ---------------------------------------------------------------------------
+
+class BusConfigItem(BaseModel):
+    bus_id: int
+    role: str
+    add_Pd_MW: float
+    pf: float
+    Vmin_pu: float
+    Vmax_pu: float
+    Pmin_MW: float
+    Pmax_MW: float
+    Qmin_MVAr: float
+    Qmax_MVAr: float
+    c2_min: float
+    c2_max: float
+    c1_min: float
+    c1_max: float
+    c0: float
+
+
+class SimulationParams(BaseModel):
+    season: str
+    case_time: str
+    global_load_scale_pdf: str
+    offer_pdf: str
+    prosumer_policy: str
+    scenario_count: int
+    random_seed: int
+    global_load_scale_range: List[float]
+    run_validation: bool
+    grid_c2: float
+    grid_c1: float
+    grid_c0: float
+    output_file_name: str
+    plot_bus_a: int
+    plot_bus_b: int
+    plot_bus_c: int
+    scenario_generator: str = "matlab"   # "matlab" | "python"
+
+
+# ---------------------------------------------------------------------------
+# Configuration endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/config")
+def get_config():
+    """Return current bus role configuration, refreshing Vmin/Vmax from case33bw."""
+    try:
+        net = pp.networks.case33bw()
+        for idx, row in state.global_config_df.iterrows():
+            bus_idx = int(row["bus_id"]) - 1
+            state.global_config_df.at[idx, "Vmin_pu"] = float(net.bus.min_vm_pu.loc[bus_idx])
+            state.global_config_df.at[idx, "Vmax_pu"] = float(net.bus.max_vm_pu.loc[bus_idx])
+    except Exception:
+        pass
+    return state.global_config_df.to_dict(orient="records")
+
+
+@app.post("/api/config/update")
+def update_config(config_items: List[BusConfigItem]):
+    """Overwrite the in-memory configuration with the submitted bus items."""
+    rows = [item.model_dump() for item in config_items]
+    state.global_config_df = pd.DataFrame(rows)
+    return {"status": "success", "message": "Konfigürasyon güncellendi."}
+
+
+@app.post("/api/config/upload")
+async def upload_config_file(file: UploadFile = File(...)):
+    """Parse an uploaded Excel or MATLAB .mat config file into global state."""
+    temp_path = os.path.abspath(f"temp_upload_{file.filename}")
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    try:
+        if file.filename.endswith(".mat"):
+            temp_excel_path = os.path.abspath("temp_mat_import.xlsx")
+            if os.path.exists(temp_excel_path):
+                os.remove(temp_excel_path)
+
+            matlab_cmd = (
+                f"S = load('{temp_path}'); "
+                f"if isfield(S, 'busRoleConfig') "
+                f"  writetable(S.busRoleConfig, '{temp_excel_path}', 'Sheet', 'bus_role_config'); "
+                f"else "
+                f"  error('MAT file does not contain busRoleConfig'); "
+                f"end; "
+                f"exit;"
+            )
+            try:
+                run_matlab_command(matlab_cmd)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"MATLAB dosyası okunamadı: {str(e)}")
+
+            if not os.path.exists(temp_excel_path):
+                raise HTTPException(status_code=400, detail="MATLAB .mat dosyasını okuyamadı.")
+
+            parsed_df = pd.read_excel(temp_excel_path, sheet_name="bus_role_config")
+            if os.path.exists(temp_excel_path):
+                os.remove(temp_excel_path)
+        else:
+            parsed_df = load_config(temp_path)
+
+        required_cols = [
+            'bus_id', 'role', 'add_Pd_MW', 'pf', 'Pmin_MW', 'Pmax_MW',
+            'Qmin_MVAr', 'Qmax_MVAr', 'Vmin_pu', 'Vmax_pu',
+            'c2_min', 'c2_max', 'c1_min', 'c1_max', 'c0'
+        ]
+        for col in required_cols:
+            if col not in parsed_df.columns:
+                raise HTTPException(status_code=400, detail=f"Eksik sütun: {col}")
+
+        state.global_config_df = parsed_df
+        return state.global_config_df.to_dict(orient="records")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Dosya okuma hatası: {str(e)}")
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+@app.get("/api/config/download")
+def download_config_file(background_tasks: BackgroundTasks):
+    """Export the current bus role configuration as a MATLAB .mat file."""
+    temp_excel_path = os.path.abspath("temp_export_config.xlsx")
+    temp_mat_path = os.path.abspath("bus_role_config.mat")
+
+    for p in [temp_excel_path, temp_mat_path]:
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+
+    try:
+        with pd.ExcelWriter(temp_excel_path, engine='openpyxl') as writer:
+            state.global_config_df.to_excel(writer, sheet_name="bus_role_config", index=False)
+
+        matlab_cmd = (
+            f"T = readtable('{temp_excel_path}', 'Sheet', 'bus_role_config'); "
+            f"busRoleConfig = T; "
+            f"baseCaseName = 'case33bw'; "
+            f"createdAt = char(datetime('now')); "
+            f"save('{temp_mat_path}', 'busRoleConfig', 'baseCaseName', 'createdAt'); "
+            f"exit;"
+        )
+        run_matlab_command(matlab_cmd)
+
+        if not os.path.exists(temp_mat_path):
+            raise HTTPException(
+                status_code=500,
+                detail="MATLAB failed to generate MAT configuration file."
+            )
+
+        def _cleanup():
+            for p in [temp_excel_path, temp_mat_path]:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+
+        background_tasks.add_task(_cleanup)
+        return FileResponse(
+            temp_mat_path,
+            filename="bus_role_config.mat",
+            media_type="application/octet-stream"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        if os.path.exists(temp_excel_path):
+            try:
+                os.remove(temp_excel_path)
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=f"Konfigürasyon dışa aktarma hatası: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Simulation endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/simulate/progress")
+def get_simulation_progress():
+    """Return the current simulation progress tracker."""
+    return state.simulation_progress
+
+
+@app.post("/api/simulate")
+def run_simulation_endpoint(params: SimulationParams):
+    """Trigger a full stochastic scenario simulation run."""
+    state.simulation_progress["status"] = "running"
+    state.simulation_progress["current"] = 0
+    state.simulation_progress["total"] = params.scenario_count
+    try:
+        result = _run_simulation(params)
+        state.simulation_progress["status"] = "completed"
+        state.simulation_progress["current"] = params.scenario_count
+        return result
+    except Exception as e:
+        state.simulation_progress["status"] = "error"
+        raise e
+
+
+# ---------------------------------------------------------------------------
+# Download / upload result endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/download-template")
+def download_template():
+    """Stream a blank Excel configuration template for download."""
+    buffer = io.BytesIO()
+    generate_default_template(buffer)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=varsayilan_sablon.xlsx"}
+    )
+
+
+@app.get("/api/download-results")
+def download_results(filename: str = "dlmp_sonuclari.xlsx"):
+    """Stream the latest simulation results as an Excel file."""
+    if state.latest_simulation_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Sonuç bulunamadı. Lütfen önce simülasyonu çalıştırın."
+        )
+
+    output_format = "Wide Scenario Format"
+    buffer = io.BytesIO()
+    export_scenarios_to_excel(
+        buffer,
+        state.latest_simulation_data["summary_rows"],
+        state.latest_simulation_data["bus_results_all"],
+        state.latest_simulation_data["branch_results_all"],
+        state.latest_simulation_data["gen_results_all"],
+        state.latest_simulation_data["validation_rows"],
+        state.latest_simulation_data["global_config_df"],
+        output_format
+    )
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@app.post("/api/results/upload")
+async def upload_results_file(file: UploadFile = File(...)):
+    """
+    Load a previously exported Excel results file.
+    Restores bus role config, runs OLS regressions, and returns full chart data.
+    """
+    temp_path = f"temp_results_{file.filename}"
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    try:
+        with pd.ExcelFile(temp_path) as xls:
+            if "bus_role_config" in xls.sheet_names:
+                state.global_config_df = pd.read_excel(xls, "bus_role_config")
+
+            df_sum = None
+            if "scenario_dataset" in xls.sheet_names:
+                df_sum = pd.read_excel(xls, "scenario_dataset")
+            if "scenario_summary" in xls.sheet_names:
+                df_sum = pd.read_excel(xls, "scenario_summary")
+
+            if df_sum is None:
+                raise ValueError("Geçerli bir senaryo özet sayfası bulunamadı.")
+
+            df_bus = (
+                pd.read_excel(xls, "bus_results_long")
+                if "bus_results_long" in xls.sheet_names else pd.DataFrame()
+            )
+            df_branch = (
+                pd.read_excel(xls, "branch_results_long")
+                if "branch_results_long" in xls.sheet_names else pd.DataFrame()
+            )
+            df_gen = (
+                pd.read_excel(xls, "gen_results_long")
+                if "gen_results_long" in xls.sheet_names else pd.DataFrame()
+            )
+            df_val = (
+                pd.read_excel(xls, "runpf_validation")
+                if "runpf_validation" in xls.sheet_names else pd.DataFrame()
+            )
+            has_config = "bus_role_config" in xls.sheet_names
+
+        for df in [df_sum, df_bus, df_branch, df_gen, df_val]:
+            if not df.empty:
+                df.columns = [c.strip() for c in df.columns]
+
+        ols_results = run_ols_models(df_sum, len(df_sum))
+
+        buses_dict = df_bus.to_dict(orient="records")
+        branches_dict = df_branch.to_dict(orient="records")
+        generators_dict = df_gen.to_dict(orient="records")
+        validation_dict = df_val.to_dict(orient="records")
+
+        plot_bus_a, plot_bus_b, plot_bus_c = 2, 17, 33
+        plot_data = build_plot_data(df_sum, buses_dict, plot_bus_a, plot_bus_b, plot_bus_c)
+        overview_plots = build_overview_plots(
+            df_sum, buses_dict, branches_dict,
+            plot_bus_a, plot_bus_b, plot_bus_c
+        )
+
+        val_fail_reasons: dict = {}
+        if not df_val.empty:
+            val_fail_reasons = {
+                str(k): int(v)
+                for k, v in df_val[df_val["validation_pass"] == 0]["dominant_fail_reason"]
+                .value_counts().items()
+            }
+
+        from datetime import datetime
+        ts = datetime.now().strftime('%H:%M:%S')
+        upload_logs = [
+            f"[{ts}] {'Loaded custom bus role config from results file.' if has_config else 'Ready. Configure bus roles and run.'}",
+            f"[{ts}] Loaded results spreadsheet: {file.filename}",
+            f"[{ts}] Parsed {len(df_sum)} scenarios successfully.",
+            f"[{ts}] {'RUNPF validation results loaded.' if not df_val.empty else 'No RUNPF validation sheet found.'}",
+            f"[{ts}] Done. Data loaded and charts updated."
+        ]
+
+        return {
+            "status": "success",
+            "logs": upload_logs,
+            "summary": {
+                "objective_cost": float(df_sum["objective_cost"].mean()),
+                "total_load_MW": float(df_sum["total_Pd_MW"].mean()),
+                "total_loss_MW": float(df_sum["total_P_loss_MW"].mean()),
+                "cost_to_load_total": float(df_sum["cost_to_load_total"].mean())
+            },
+            "ols_results": ols_results,
+            "buses": buses_dict,
+            "branches": branches_dict,
+            "generators": generators_dict,
+            "validation_table": validation_dict,
+            "plot_data": plot_data,
+            "overview_plots": overview_plots,
+            "validation_fail_reasons": val_fail_reasons,
+            "summary_table": df_sum.to_dict(orient="records")
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Sonuç yükleme hatası: {str(e)}")
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+# ---------------------------------------------------------------------------
+# Static file serving (must be last)
+# ---------------------------------------------------------------------------
+
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
