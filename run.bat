@@ -48,8 +48,8 @@ if not defined PYTHON_CMD (
     exit /b 1
 )
 
-:: Check if virtual environment exists
-if not exist "%VENV_DIR%" (
+:: Check if virtual environment and python executable exist
+if not exist "%VENV_DIR%\Scripts\python.exe" (
     echo [INFO] Creating virtual environment in a short path: %VENV_DIR%
     "%PYTHON_CMD%" -m venv "%VENV_DIR%"
     if !errorlevel! neq 0 (
