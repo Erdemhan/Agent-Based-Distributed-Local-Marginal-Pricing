@@ -163,8 +163,10 @@ document.addEventListener("DOMContentLoaded", () => {
         plotC.appendChild(optC);
     }
 
-    // Initialize config load
-    fetchConfig();
+    // Initialize config load after checking system startup (clears cache if backend restarted)
+    checkSystemStartup().then(() => {
+        fetchConfig();
+    });
 
     // Event listeners
     selectEditor.addEventListener("change", (e) => selectBus(parseInt(e.target.value)));
@@ -365,6 +367,27 @@ function showToast(message, type = "success") {
     setTimeout(() => {
         toast.className = "toast";
     }, 3000);
+}
+
+// Check system startup ID to clear cache if backend restarted
+async function checkSystemStartup() {
+    try {
+        const res = await fetch("/api/sysinfo");
+        if (!res.ok) return;
+        const info = await res.json();
+        const localId = sessionStorage.getItem("abm_dlmp_startup_id");
+        if (localId && localId !== info.startup_id) {
+            console.log("Backend restarted. Clearing sessionStorage...");
+            sessionStorage.clear();
+            sessionStorage.setItem("abm_dlmp_startup_id", info.startup_id);
+            // Trigger full reload to defaults
+            window.location.reload();
+            return;
+        }
+        sessionStorage.setItem("abm_dlmp_startup_id", info.startup_id);
+    } catch (e) {
+        console.error("System info fetch failed", e);
+    }
 }
 
 // Fetch current in-memory config from server (checking sessionStorage first)

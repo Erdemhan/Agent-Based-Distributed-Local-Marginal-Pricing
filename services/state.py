@@ -17,3 +17,8 @@ simulation_progress: dict = {
 
 # Cache of the most recent simulation results (used for Excel export)
 latest_simulation_data: dict | None = None
+
+# Unique runtime session ID generated on startup (used to force frontend cache clear)
+import uuid
+startup_id: str = str(uuid.uuid4())
+

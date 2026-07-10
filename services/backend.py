@@ -197,44 +197,48 @@ async def upload_config_file(file: UploadFile = File(...)):
 
 @app.get("/api/config/download")
 def download_config_file(background_tasks: BackgroundTasks):
-    """Export the current bus role configuration as a MATLAB .mat file."""
-    temp_excel_path = os.path.abspath("temp_export_config.xlsx")
+    """Export the current bus role configuration as a MATLAB .mat file using scipy.io."""
     temp_mat_path = os.path.abspath("bus_role_config.mat")
 
-    for p in [temp_excel_path, temp_mat_path]:
-        if os.path.exists(p):
-            try:
-                os.remove(p)
-            except Exception:
-                pass
+    if os.path.exists(temp_mat_path):
+        try:
+            os.remove(temp_mat_path)
+        except Exception:
+            pass
 
     try:
-        with pd.ExcelWriter(temp_excel_path, engine='openpyxl') as writer:
-            state.global_config_df.to_excel(writer, sheet_name="bus_role_config", index=False)
+        import scipy.io as sio
+        import numpy as np
 
-        matlab_cmd = (
-            f"T = readtable('{temp_excel_path}', 'Sheet', 'bus_role_config'); "
-            f"busRoleConfig = T; "
-            f"baseCaseName = 'case33bw'; "
-            f"createdAt = char(datetime('now')); "
-            f"save('{temp_mat_path}', 'busRoleConfig', 'baseCaseName', 'createdAt'); "
-            f"exit;"
-        )
-        run_matlab_command(matlab_cmd)
+        # Build dict representation of the global config DataFrame
+        config_dict = {}
+        for col in state.global_config_df.columns:
+            if col == "role":
+                # MATLAB cell array representation for strings
+                config_dict[col] = np.array(state.global_config_df[col].tolist(), dtype=object)
+            else:
+                config_dict[col] = state.global_config_df[col].values
+
+        mat_data = {
+            "busRoleConfig": config_dict,
+            "baseCaseName": "case33bw",
+            "createdAt": pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+        sio.savemat(temp_mat_path, mat_data)
 
         if not os.path.exists(temp_mat_path):
             raise HTTPException(
                 status_code=500,
-                detail="MATLAB failed to generate MAT configuration file."
+                detail="Failed to generate MAT configuration file."
             )
 
         def _cleanup():
-            for p in [temp_excel_path, temp_mat_path]:
-                if os.path.exists(p):
-                    try:
-                        os.remove(p)
-                    except Exception:
-                        pass
+            if os.path.exists(temp_mat_path):
+                try:
+                    os.remove(temp_mat_path)
+                except Exception:
+                    pass
 
         background_tasks.add_task(_cleanup)
         return FileResponse(
@@ -242,15 +246,9 @@ def download_config_file(background_tasks: BackgroundTasks):
             filename="bus_role_config.mat",
             media_type="application/octet-stream"
         )
-    except HTTPException:
-        raise
     except Exception as e:
-        if os.path.exists(temp_excel_path):
-            try:
-                os.remove(temp_excel_path)
-            except Exception:
-                pass
         raise HTTPException(status_code=500, detail=f"Konfigürasyon dışa aktarma hatası: {str(e)}")
+
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +275,12 @@ def run_simulation_endpoint(params: SimulationParams):
     except Exception as e:
         state.simulation_progress["status"] = "error"
         raise e
+
+
+@app.get("/api/sysinfo")
+def get_sysinfo():
+    """Return system information including startup session ID."""
+    return {"startup_id": state.startup_id}
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +344,7 @@ async def upload_results_file(file: UploadFile = File(...)):
         with pd.ExcelFile(temp_path) as xls:
             if "bus_role_config" in xls.sheet_names:
                 state.global_config_df = pd.read_excel(xls, "bus_role_config")
+                state.global_config_df.dropna(subset=["bus_id"], inplace=True)
 
             df_sum = None
             if "scenario_dataset" in xls.sheet_names:
@@ -347,7 +352,7 @@ async def upload_results_file(file: UploadFile = File(...)):
             if "scenario_summary" in xls.sheet_names:
                 df_sum = pd.read_excel(xls, "scenario_summary")
 
-            if df_sum is None:
+            if df_sum is None or df_sum.empty:
                 raise ValueError("Geçerli bir senaryo özet sayfası bulunamadı.")
 
             df_bus = (
@@ -368,9 +373,35 @@ async def upload_results_file(file: UploadFile = File(...)):
             )
             has_config = "bus_role_config" in xls.sheet_names
 
+        # Clean and drop rows that are all NaN, format columns
         for df in [df_sum, df_bus, df_branch, df_gen, df_val]:
             if not df.empty:
                 df.columns = [c.strip() for c in df.columns]
+                if "scenario_id" in df.columns:
+                    df.dropna(subset=["scenario_id"], inplace=True)
+                else:
+                    df.dropna(how="all", inplace=True)
+
+        # Convert numeric columns to numeric to avoid standard deviation of NaN / range issues
+        numeric_cols_sum = [
+            "objective_cost", "total_Pd_MW", "total_Qd_MVAr", 
+            "total_P_loss_MW", "cost_to_load_total", "DLMP_spread_LAM_P",
+            "max_branch_loading_percent", "scenario_id"
+        ]
+        for col in numeric_cols_sum:
+            if col in df_sum.columns:
+                df_sum[col] = pd.to_numeric(df_sum[col], errors="coerce")
+        df_sum.dropna(subset=["total_Pd_MW"], inplace=True) # Ensure finite range for histogram
+
+        # Cast identifiers to integers for strict matching
+        if not df_sum.empty and "scenario_id" in df_sum.columns:
+            df_sum["scenario_id"] = pd.to_numeric(df_sum["scenario_id"], errors="coerce").fillna(0).astype(int)
+        if not df_bus.empty and "bus_id" in df_bus.columns:
+            df_bus["bus_id"] = pd.to_numeric(df_bus["bus_id"], errors="coerce").fillna(0).astype(int)
+        if not df_branch.empty and "branch_id" in df_branch.columns:
+            df_branch["branch_id"] = pd.to_numeric(df_branch["branch_id"], errors="coerce").fillna(0).astype(int)
+        if not df_gen.empty and "bus_id" in df_gen.columns:
+            df_gen["bus_id"] = pd.to_numeric(df_gen["bus_id"], errors="coerce").fillna(0).astype(int)
 
         ols_results = run_ols_models(df_sum, len(df_sum))
 
@@ -423,6 +454,7 @@ async def upload_results_file(file: UploadFile = File(...)):
             "validation_fail_reasons": val_fail_reasons,
             "summary_table": df_sum.to_dict(orient="records")
         }
+
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Sonuç yükleme hatası: {str(e)}")

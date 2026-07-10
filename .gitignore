@@ -96,13 +96,14 @@ debug_opf_failed.txt
 .streamlit/secrets.toml
 
 # ========================
-# Proje içi gizli notlar
+# Project
 # ========================
 *.md.bak
 abm-mimari.md
 abm.md
 generate_scenarios_debug.m
 TODO.md
+dlmp_config.mat
 
 # ========================
 # Antigravity / Agent IDE
