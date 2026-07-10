@@ -1,3 +1,11 @@
+// Helper to safely format numbers and prevent "Cannot read properties of null (reading 'toFixed')"
+function formatNum(value, decimals = 4, fallback = "0.0000") {
+    if (value === null || value === undefined || isNaN(Number(value))) {
+        return fallback;
+    }
+    return Number(value).toFixed(decimals);
+}
+
 // Global state variables
 let configData = [];
 let selectedBusId = 1;
@@ -225,6 +233,29 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // Error modal control buttons
+    const hideErrModal = () => {
+        const modal = document.getElementById("error-modal");
+        if (modal) modal.style.display = "none";
+    };
+    const btnCloseModal = document.getElementById("btn-close-error-modal");
+    const btnHideModal = document.getElementById("btn-hide-error-modal");
+    const btnCopyError = document.getElementById("btn-copy-error");
+    if (btnCloseModal) btnCloseModal.addEventListener("click", hideErrModal);
+    if (btnHideModal) btnHideModal.addEventListener("click", hideErrModal);
+    if (btnCopyError) {
+        btnCopyError.addEventListener("click", () => {
+            const pre = document.getElementById("error-details-pre");
+            if (pre) {
+                navigator.clipboard.writeText(pre.textContent).then(() => {
+                    showToast("Hata detayları panoya kopyalandı!");
+                }).catch(() => {
+                    alert("Panoya kopyalanamadı.");
+                });
+            }
+        });
+    }
+
     // Scenario Generator toggle visual handler
     document.querySelectorAll("input[name='scenario_generator']").forEach(radio => {
         radio.addEventListener("change", () => {
@@ -369,6 +400,30 @@ function showToast(message, type = "success") {
     }, 3000);
 }
 
+// Detailed Error Modal helper
+function showDetailedError(title, details) {
+    const modal = document.getElementById("error-modal");
+    const pre = document.getElementById("error-details-pre");
+    if (!modal || !pre) return;
+    
+    document.querySelector("#error-modal h3").textContent = `⚠️ ${title}`;
+    pre.textContent = details;
+    modal.style.display = "flex";
+}
+
+// Global exception interceptors for JavaScript crashes
+window.onerror = function(message, source, lineno, colno, error) {
+    const details = `JavaScript Error: ${message}\nSource: ${source}\nLine: ${lineno}:${colno}\n\nStack Trace:\n${error ? error.stack : 'N/A'}`;
+    showDetailedError("Çalışma Zamanı Hatası (JS Crash)", details);
+    return false; // let browser console print it too
+};
+
+window.onunhandledrejection = function(event) {
+    const reason = event.reason;
+    const details = `Unhandled Promise Rejection:\nReason: ${reason ? (reason.stack || reason.message || reason) : 'N/A'}`;
+    showDetailedError("Promise Rejection (Beklenmedik Hata)", details);
+};
+
 // Check system startup ID to clear cache if backend restarted
 async function checkSystemStartup() {
     try {
@@ -482,7 +537,10 @@ async function uploadConfigFile(file) {
             method: "POST",
             body: formData
         });
-        if (!response.ok) throw new Error("Dosya yukleme hatası.");
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || "Dosya yükleme hatası.");
+        }
         configData = await response.json();
         sessionStorage.setItem("abm_dlmp_config", JSON.stringify(configData));
         setConfigStatus("loaded", file.name);
@@ -493,6 +551,7 @@ async function uploadConfigFile(file) {
 
     } catch (err) {
         showToast(err.message, "error");
+        showDetailedError("Konfigürasyon Yükleme Hatası (Config Upload)", err.message);
     }
 }
 
@@ -554,6 +613,7 @@ async function uploadResultsExcel(file) {
         logArea.value += `\n[${new Date().toLocaleTimeString('tr-TR')}] Error: ${err.message}`;
         logArea.scrollTop = logArea.scrollHeight;
         showToast(err.message, "error");
+        showDetailedError("Sonuç Excel Yükleme Hatası (Excel Upload)", err.message);
     } finally {
         simulateBtn.disabled = false;
         simulateBtn.textContent = "🚀 Generate Scenarios + Analyze";
@@ -689,7 +749,7 @@ function drawTopology() {
 // Tooltip helpers
 function showTooltip(e, bus) {
     const tooltip = window.appTooltip;
-    tooltip.innerHTML = `<strong>Bara ${bus.bus_id}</strong><br>Rol: ${bus.role}<br>Ek Pd: ${bus.add_Pd_MW.toFixed(3)} MW<br>Pmax: ${bus.Pmax_MW.toFixed(3)} MW`;
+    tooltip.innerHTML = `<strong>Bara ${bus.bus_id}</strong><br>Rol: ${bus.role}<br>Ek Pd: ${formatNum(bus.add_Pd_MW, 3)} MW<br>Pmax: ${formatNum(bus.Pmax_MW, 3)} MW`;
     tooltip.style.display = "block";
     moveTooltip(e);
 }
@@ -817,16 +877,16 @@ function updateSelectedBusDetailsText() {
     text += `• MATPOWER BUS_TYPE    : ${roleType} (${roleTypeText})\n\n`;
     
     text += `BASE DEMAND / CONFIGURATION\n`;
-    text += `• Loaded case base Pd/Qd : ${baseLoad.p.toFixed(4)} MW / ${baseLoad.q.toFixed(4)} MVAr\n`;
-    text += `• Fixed Added Pd       : ${bus.add_Pd_MW.toFixed(4)} MW\n`;
-    text += `• Fixed Added PF       : ${bus.pf.toFixed(3)}\n`;
-    text += `• Pmin / Pmax          : ${bus.Pmin_MW.toFixed(4)} – ${bus.Pmax_MW.toFixed(4)} MW\n`;
-    text += `• Qmin / Qmax          : ${bus.Qmin_MVAr.toFixed(4)} – ${bus.Qmax_MVAr.toFixed(4)} MVAr\n`;
-    text += `• Vmin / Vmax          : ${bus.Vmin_pu.toFixed(3)} – ${bus.Vmax_pu.toFixed(3)} p.u.\n`;
+    text += `• Loaded case base Pd/Qd : ${formatNum(baseLoad.p, 4)} MW / ${formatNum(baseLoad.q, 4)} MVAr\n`;
+    text += `• Fixed Added Pd       : ${formatNum(bus.add_Pd_MW, 4)} MW\n`;
+    text += `• Fixed Added PF       : ${formatNum(bus.pf, 3, "1.000")}\n`;
+    text += `• Pmin / Pmax          : ${formatNum(bus.Pmin_MW, 4)} – ${formatNum(bus.Pmax_MW, 4)} MW\n`;
+    text += `• Qmin / Qmax          : ${formatNum(bus.Qmin_MVAr, 4)} – ${formatNum(bus.Qmax_MVAr, 4)} MVAr\n`;
+    text += `• Vmin / Vmax          : ${formatNum(bus.Vmin_pu, 3, "0.900")} – ${formatNum(bus.Vmax_pu, 3, "1.100")} p.u.\n`;
     text += `• Fixed generator Vg   : 1.000 p.u.\n\n`;
 
     text += `COST MODEL\n`;
-    text += `• C(P) = ${bus.c2_min.toFixed(4)} P^2 + ${bus.c1_min.toFixed(4)} P + ${bus.c0.toFixed(4)}\n\n`;
+    text += `• C(P) = ${formatNum(bus.c2_min, 4)} P^2 + ${formatNum(bus.c1_min, 4)} P + ${formatNum(bus.c0, 4)}\n\n`;
 
     // Multipliers
     const season = document.getElementById("season-select").value;
@@ -847,10 +907,10 @@ function updateSelectedBusDetailsText() {
 
     if (bus.role === "DER" || bus.role === "Prosumer") {
         text += `EFFECTIVE GENERATION LIMITS\n`;
-        text += `• Configured Pmin/Pmax : ${bus.Pmin_MW.toFixed(4)} – ${bus.Pmax_MW.toFixed(4)} MW\n`;
-        text += `• After Case time      : ${(bus.Pmin_MW * time_generation_multiplier).toFixed(4)} – ${(bus.Pmax_MW * time_generation_multiplier).toFixed(4)} MW\n`;
-        text += `• Configured Qmin/Qmax : ${bus.Qmin_MVAr.toFixed(4)} – ${bus.Qmax_MVAr.toFixed(4)} MVAr\n`;
-        text += `• After Case time      : ${(bus.Qmin_MVAr * time_generation_multiplier).toFixed(4)} – ${(bus.Qmax_MVAr * time_generation_multiplier).toFixed(4)} MVAr\n\n`;
+        text += `• Configured Pmin/Pmax : ${formatNum(bus.Pmin_MW, 4)} – ${formatNum(bus.Pmax_MW, 4)} MW\n`;
+        text += `• After Case time      : ${formatNum(bus.Pmin_MW * time_generation_multiplier, 4)} – ${formatNum(bus.Pmax_MW * time_generation_multiplier, 4)} MW\n`;
+        text += `• Configured Qmin/Qmax : ${formatNum(bus.Qmin_MVAr, 4)} – ${formatNum(bus.Qmax_MVAr, 4)} MVAr\n`;
+        text += `• After Case time      : ${formatNum(bus.Qmin_MVAr * time_generation_multiplier, 4)} – ${formatNum(bus.Qmax_MVAr * time_generation_multiplier, 4)} MVAr\n\n`;
     }
 
     if (bus.role === "PQ Load" || bus.role === "Prosumer") {
@@ -863,10 +923,10 @@ function updateSelectedBusDetailsText() {
         const effectiveQd = configuredQd * season_demand_multiplier;
 
         text += `EFFECTIVE DEMAND\n`;
-        text += `• Configured Pd        : ${configuredPd.toFixed(4)} MW\n`;
-        text += `• After Season         : ${effectivePd.toFixed(4)} MW\n`;
-        text += `• Configured Qd        : ${configuredQd.toFixed(4)} MVAr\n`;
-        text += `• After Season         : ${effectiveQd.toFixed(4)} MVAr\n\n`;
+        text += `• Configured Pd        : ${formatNum(configuredPd, 4)} MW\n`;
+        text += `• After Season         : ${formatNum(effectivePd, 4)} MW\n`;
+        text += `• Configured Qd        : ${formatNum(configuredQd, 4)} MVAr\n`;
+        text += `• After Season         : ${formatNum(effectiveQd, 4)} MVAr\n\n`;
     }
 
     // Latest OPF result (if simulationResults has it)
@@ -875,11 +935,11 @@ function updateSelectedBusDetailsText() {
         if (matchingBuses.length > 0) {
             const br = matchingBuses[matchingBuses.length - 1];
             text += `LATEST OPF RESULT (SCENARIO ${br.scenario_id})\n`;
-            text += `• Final Pd / Qd        : ${br.Pd_MW.toFixed(4)} MW / ${br.Qd_MVAr.toFixed(4)} MVAr\n`;
-            text += `• Pg / Qg at bus       : ${br.Pg_MW.toFixed(4)} MW / ${br.Qg_MVAr.toFixed(4)} MVAr\n`;
-            text += `• Vm / Va              : ${br.Vm_pu.toFixed(4)} p.u. / ${br.Va_deg.toFixed(4)} deg\n`;
-            text += `• DLMP LAM_P / LAM_Q   : ${br.DLMP_LAM_P.toFixed(4)} / ${br.DLMP_LAM_Q.toFixed(4)}\n`;
-            text += `• Cost-to-load         : ${br.cost_to_load.toFixed(4)}\n`;
+            text += `• Final Pd / Qd        : ${formatNum(br.Pd_MW, 4)} MW / ${formatNum(br.Qd_MVAr, 4)} MVAr\n`;
+            text += `• Pg / Qg at bus       : ${formatNum(br.Pg_MW, 4)} MW / ${formatNum(br.Qg_MVAr, 4)} MVAr\n`;
+            text += `• Vm / Va              : ${formatNum(br.Vm_pu, 4)} p.u. / ${formatNum(br.Va_deg, 4)} deg\n`;
+            text += `• DLMP LAM_P / LAM_Q   : ${formatNum(br.DLMP_LAM_P, 4)} / ${formatNum(br.DLMP_LAM_Q, 4)}\n`;
+            text += `• Cost-to-load         : ${formatNum(br.cost_to_load, 4)}\n`;
         }
     }
 
@@ -1164,6 +1224,7 @@ async function runSimulation() {
         logArea.value += `\n[${new Date().toLocaleTimeString('tr-TR')}] Error: ${err.message}`;
         logArea.scrollTop = logArea.scrollHeight;
         showToast(err.message, "error");
+        showDetailedError("Simülasyon Çalıştırma Hatası (Simulation Diagnostics)", err.message);
     } finally {
         if (pollInterval) {
             clearInterval(pollInterval);
@@ -1189,8 +1250,8 @@ function renderResultsTables() {
             <td><code>${m.dependent_variable}</code></td>
             <td><code>${m.formula}</code></td>
             <td style="font-family:monospace;font-size:10px;">${m.coefficients}</td>
-            <td><strong>${m.R_squared.toFixed(4)}</strong></td>
-            <td>${m.RMSE.toFixed(4)}</td>
+            <td><strong>${formatNum(m.R_squared, 4)}</strong></td>
+            <td>${formatNum(m.RMSE, 4)}</td>
             <td>${m.N}</td>
         `;
         olsBody.appendChild(tr);
@@ -1240,10 +1301,10 @@ function renderValidationTablePage() {
                 <td>${v.runpf_success ? "✓ Başarılı" : "✗ Başarısız"}</td>
                 <td><span class="badge ${v.validation_pass ? 'badge-ready' : 'badge-error'}">${v.validation_pass ? 'Pass' : 'Fail'}</span></td>
                 <td>${v.dominant_fail_reason}</td>
-                <td>${v.max_abs_Vm_error.toFixed(6)}</td>
-                <td>${v.max_abs_Va_error.toFixed(4)}</td>
-                <td>${v.max_abs_Pf_error.toFixed(4)}</td>
-                <td>${v.max_abs_loading_error.toFixed(3)} %</td>
+                <td>${formatNum(v.max_abs_Vm_error, 6)}</td>
+                <td>${formatNum(v.max_abs_Va_error, 4)}</td>
+                <td>${formatNum(v.max_abs_Pf_error, 4)}</td>
+                <td>${formatNum(v.max_abs_loading_error, 3)} %</td>
             `;
             valBody.appendChild(tr);
         });
@@ -1921,10 +1982,10 @@ function updateOverviewContextInfo() {
 
     let text = "DATASET SUMMARY\n\n";
     text += `• Scenarios              : ${nScenarios}\n`;
-    text += `• Total Pd range [MW]    : ${minPd.toFixed(3)} – ${maxPd.toFixed(3)}\n`;
-    text += `• Mean total Pd [MW]     : ${meanPd.toFixed(3)}\n`;
-    text += `• Max loading [%]        : ${maxLoading.toFixed(3)}\n`;
-    text += `• Mean DLMP LAM_P        : ${meanDlmp.toFixed(3)}\n\n`;
+    text += `• Total Pd range [MW]    : ${formatNum(minPd, 3)} – ${formatNum(maxPd, 3)}\n`;
+    text += `• Mean total Pd [MW]     : ${formatNum(meanPd, 3)}\n`;
+    text += `• Max loading [%]        : ${formatNum(maxLoading, 3)}\n`;
+    text += `• Mean DLMP LAM_P        : ${formatNum(meanDlmp, 3)}\n\n`;
     text += "Use Overview plots to inspect system-level behavior.";
 
     textarea.value = text;

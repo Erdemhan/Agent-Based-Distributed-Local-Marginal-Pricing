@@ -504,6 +504,24 @@
     <!-- Notification Toast -->
     <div id="toast" class="toast"></div>
 
+    <!-- Detailed Error Modal -->
+    <div id="error-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3>⚠️ Sistem Hata Teşhisi (Error Diagnostics)</h3>
+                <span class="modal-close" id="btn-close-error-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Uygulamada bir çalışma zamanı veya sunucu hatası oluştu. Teknik detaylar aşağıda listelenmiştir:</p>
+                <pre id="error-details-pre"></pre>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-copy-error" class="btn btn-secondary">📋 Kopyala</button>
+                <button id="btn-hide-error-modal" class="btn btn-danger">Kapat</button>
+            </div>
+        </div>
+    </div>
+
     <!-- JS script -->
     <script src="script.js?v=48"></script>
 </body>
