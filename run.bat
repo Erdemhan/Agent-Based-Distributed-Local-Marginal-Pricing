@@ -27,8 +27,23 @@ if not defined PYTHON_CMD (
     )
 )
 if not defined PYTHON_CMD (
-    if exist "E:\Anaconda\envs\abmem\python.exe" (
-        SET PYTHON_CMD=E:\Anaconda\envs\abmem\python.exe
+    :: Search common default installation paths for Python/Anaconda/Miniconda
+    for %%P in (
+        "%USERPROFILE%\AppData\Local\Programs\Python\Python313\python.exe"
+        "%USERPROFILE%\AppData\Local\Programs\Python\Python312\python.exe"
+        "%USERPROFILE%\AppData\Local\Programs\Python\Python311\python.exe"
+        "%USERPROFILE%\AppData\Local\Programs\Python\Python310\python.exe"
+        "%USERPROFILE%\Anaconda3\python.exe"
+        "%USERPROFILE%\miniconda3\python.exe"
+        "C:\Program Files\Python313\python.exe"
+        "C:\Program Files\Python312\python.exe"
+        "C:\Program Files\Python311\python.exe"
+        "C:\Program Files\Python310\python.exe"
+        "C:\ProgramData\Anaconda3\python.exe"
+    ) do (
+        if exist "%%~P" (
+            SET PYTHON_CMD=%%~P
+        )
     )
 )
 if not defined PYTHON_CMD (
