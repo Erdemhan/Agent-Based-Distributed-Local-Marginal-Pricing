@@ -68,13 +68,15 @@ def sample_by_pdf(min_val, max_val, pdf_name="Uniform"):
     return min_val + width * min(1.0, max(0.0, x))
 
 
-def load_config(file_path):
+def load_config(file_path, filename=None):
     """
-    Excel (.xlsx) veya MATLAB (.mat) dosyasından bara rollerini ve ayarlarını yükler
+    Excel (.xlsx) veya MATLAB (.mat) dosyasından veya akışından bara rollerini ve ayarlarını yükler
     ve temizlenmiş bir pandas DataFrame döndürür.
     """
     df = None
-    ext = os.path.splitext(file_path)[1].lower()
+    if filename is None:
+        filename = file_path
+    ext = os.path.splitext(filename)[1].lower()
     
     if ext in ['.xlsx', '.xls']:
         with pd.ExcelFile(file_path) as xls:

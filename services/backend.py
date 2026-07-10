@@ -141,41 +141,65 @@ def update_config(config_items: List[BusConfigItem]):
 @app.post("/api/config/upload")
 async def upload_config_file(file: UploadFile = File(...)):
     """Parse an uploaded Excel or MATLAB .mat config file into global state."""
-    temp_path = os.path.abspath(f"temp_upload_{file.filename}")
-    with open(temp_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    import io
+    file_bytes = await file.read()
+
+    # Try native Python parsing in-memory first
+    try:
+        file_stream = io.BytesIO(file_bytes)
+        parsed_df = load_config(file_stream, filename=file.filename)
+    except Exception as py_err:
+        # Fall back to MATLAB for .mat files if native python fails
+        if file.filename.endswith(".mat"):
+            temp_path = os.path.abspath(f"temp_upload_{file.filename}")
+            with open(temp_path, "wb") as buffer:
+                buffer.write(file_bytes)
+
+            temp_excel_path = os.path.abspath("temp_mat_import.xlsx")
+            try:
+                if os.path.exists(temp_excel_path):
+                    try:
+                        os.remove(temp_excel_path)
+                    except Exception:
+                        pass
+
+                matlab_cmd = (
+                    f"S = load('{temp_path}'); "
+                    f"if isfield(S, 'busRoleConfig') "
+                    f"  cfg = S.busRoleConfig; "
+                    f"  if isstruct(cfg), cfg = struct2table(cfg); end; "
+                    f"  writetable(cfg, '{temp_excel_path}', 'Sheet', 'bus_role_config'); "
+                    f"else "
+                    f"  error('MAT file does not contain busRoleConfig'); "
+                    f"end; "
+                    f"exit;"
+                )
+                run_matlab_command(matlab_cmd)
+
+                if not os.path.exists(temp_excel_path):
+                    raise ValueError("MATLAB .mat dosyasını okuyamadı.")
+
+                parsed_df = pd.read_excel(temp_excel_path, sheet_name="bus_role_config")
+            except Exception as ml_err:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"MATLAB dosyası okunamadı (Python Hatası: {py_err} | MATLAB Hatası: {ml_err})"
+                )
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+                if os.path.exists(temp_excel_path):
+                    try:
+                        os.remove(temp_excel_path)
+                    except Exception:
+                        pass
+        else:
+            raise HTTPException(status_code=400, detail=f"Dosya okuma hatası: {str(py_err)}")
 
     try:
-        if file.filename.endswith(".mat"):
-            temp_excel_path = os.path.abspath("temp_mat_import.xlsx")
-            if os.path.exists(temp_excel_path):
-                os.remove(temp_excel_path)
-
-            matlab_cmd = (
-                f"S = load('{temp_path}'); "
-                f"if isfield(S, 'busRoleConfig') "
-                f"  cfg = S.busRoleConfig; "
-                f"  if isstruct(cfg), cfg = struct2table(cfg); end; "
-                f"  writetable(cfg, '{temp_excel_path}', 'Sheet', 'bus_role_config'); "
-                f"else "
-                f"  error('MAT file does not contain busRoleConfig'); "
-                f"end; "
-                f"exit;"
-            )
-            try:
-                run_matlab_command(matlab_cmd)
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"MATLAB dosyası okunamadı: {str(e)}")
-
-            if not os.path.exists(temp_excel_path):
-                raise HTTPException(status_code=400, detail="MATLAB .mat dosyasını okuyamadı.")
-
-            parsed_df = pd.read_excel(temp_excel_path, sheet_name="bus_role_config")
-            if os.path.exists(temp_excel_path):
-                os.remove(temp_excel_path)
-        else:
-            parsed_df = load_config(temp_path)
-
         required_cols = [
             'bus_id', 'role', 'add_Pd_MW', 'pf', 'Pmin_MW', 'Pmax_MW',
             'Qmin_MVAr', 'Qmax_MVAr', 'Vmin_pu', 'Vmax_pu',
@@ -192,9 +216,6 @@ async def upload_config_file(file: UploadFile = File(...)):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Dosya okuma hatası: {str(e)}")
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
 
 
 @app.get("/api/config/download")
@@ -338,12 +359,12 @@ async def upload_results_file(file: UploadFile = File(...)):
     Load a previously exported Excel results file.
     Restores bus role config, runs OLS regressions, and returns full chart data.
     """
-    temp_path = f"temp_results_{file.filename}"
-    with open(temp_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
     try:
-        with pd.ExcelFile(temp_path) as xls:
+        import io
+        file_bytes = await file.read()
+        file_stream = io.BytesIO(file_bytes)
+
+        with pd.ExcelFile(file_stream) as xls:
             if "bus_role_config" in xls.sheet_names:
                 state.global_config_df = pd.read_excel(xls, "bus_role_config")
                 state.global_config_df.dropna(subset=["bus_id"], inplace=True)
@@ -460,9 +481,6 @@ async def upload_results_file(file: UploadFile = File(...)):
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Sonuç yükleme hatası: {str(e)}")
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
 
 
 # ---------------------------------------------------------------------------
