@@ -77,9 +77,9 @@ def load_config(file_path):
     ext = os.path.splitext(file_path)[1].lower()
     
     if ext in ['.xlsx', '.xls']:
-        xls = pd.ExcelFile(file_path)
-        sheet_name = 'bus_role_config' if 'bus_role_config' in xls.sheet_names else xls.sheet_names[0]
-        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        with pd.ExcelFile(file_path) as xls:
+            sheet_name = 'bus_role_config' if 'bus_role_config' in xls.sheet_names else xls.sheet_names[0]
+            df = pd.read_excel(xls, sheet_name=sheet_name)
         
     elif ext == '.mat':
         mat_data = sio.loadmat(file_path)
