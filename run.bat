@@ -16,18 +16,14 @@ echo ==================================================
 
 :: Detect Python executable dynamically
 SET PYTHON_CMD=
+
 where python >nul 2>nul
-if !errorlevel! eq 0 (
-    SET PYTHON_CMD=python
-)
+if %errorlevel% equ 0 SET PYTHON_CMD=python
+
+where py >nul 2>nul
+if %errorlevel% equ 0 if not defined PYTHON_CMD SET PYTHON_CMD=py
+
 if not defined PYTHON_CMD (
-    where py >nul 2>nul
-    if !errorlevel! eq 0 (
-        SET PYTHON_CMD=py
-    )
-)
-if not defined PYTHON_CMD (
-    :: Search common default installation paths for Python/Anaconda/Miniconda
     for %%P in (
         "%USERPROFILE%\AppData\Local\Programs\Python\Python313\python.exe"
         "%USERPROFILE%\AppData\Local\Programs\Python\Python312\python.exe"
@@ -41,11 +37,10 @@ if not defined PYTHON_CMD (
         "C:\Program Files\Python310\python.exe"
         "C:\ProgramData\Anaconda3\python.exe"
     ) do (
-        if exist "%%~P" (
-            SET PYTHON_CMD=%%~P
-        )
+        if exist "%%~P" SET PYTHON_CMD="%%~P"
     )
 )
+
 if not defined PYTHON_CMD (
     echo [ERROR] Python could not be detected on this system!
     echo Lütfen Python'un yüklü ve PATH'e ekli olduğundan emin olun.
