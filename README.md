@@ -87,8 +87,8 @@ abm-dlmp/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/<your-org>/abm-dlmp.git
-cd abm-dlmp
+git clone https://github.com/Erdemhan/Agent-Based-Distributed-Local-Marginal-Pricing.git
+cd Agent-Based-Distributed-Local-Marginal-Pricing
 ```
 
 ### 2. Create and activate a virtual environment
@@ -102,6 +102,9 @@ source .venv/bin/activate
 ```
 
 ### 3. Install dependencies
+
+> **Windows kullanıcıları bu adımı atlayabilir.**  
+> `run.bat` ilk çalıştırmada otomatik olarak bir sanal ortam oluşturur ve `requirements.txt` bağımlılıklarını yükler.
 
 ```bash
 pip install -r requirements.txt
