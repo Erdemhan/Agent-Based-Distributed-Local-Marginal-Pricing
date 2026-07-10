@@ -39,10 +39,13 @@ def _sanitize(obj):
         return [_sanitize(v) for v in obj]
     if isinstance(obj, (np.integer,)):
         return int(obj)
-    if isinstance(obj, (np.floating,)):
-        return float(obj)
+    if isinstance(obj, (np.floating, float)):
+        val = float(obj)
+        if math.isnan(val) or math.isinf(val):
+            return None
+        return val
     if isinstance(obj, np.ndarray):
-        return obj.tolist()
+        return _sanitize(obj.tolist())
     if isinstance(obj, np.bool_):
         return bool(obj)
     return obj
