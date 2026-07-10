@@ -148,16 +148,6 @@ async def upload_config_file(file: UploadFile = File(...)):
     try:
         file_stream = io.BytesIO(file_bytes)
         
-        # Check if the user accidentally uploaded a results Excel file into the configuration loader
-        if file.filename.endswith((".xlsx", ".xls")):
-            with pd.ExcelFile(file_stream) as xls:
-                if "scenario_dataset" in xls.sheet_names or "bus_results_long" in xls.sheet_names:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Yüklediğiniz dosya bir 'Simülasyon Sonuç' dosyasıdır. Konfigürasyon yüklemek için lütfen sadece konfigürasyon şablonunu yükleyin veya bu dosyayı sonuç olarak sisteme yüklemek için sağdaki 'Sonuç Excel Yükle' butonunu kullanın."
-                    )
-            file_stream.seek(0)
-
         parsed_df = load_config(file_stream, filename=file.filename)
     except HTTPException:
         raise
