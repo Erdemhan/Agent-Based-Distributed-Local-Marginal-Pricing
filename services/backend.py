@@ -8,7 +8,35 @@ Principle — API routing is the only responsibility of this module.
 
 import io
 import os
+import sys
 import shutil
+
+# ---------------------------------------------------------------------------
+# Monkeypatch pandapower pp_dir for PyInstaller compatibility
+# ---------------------------------------------------------------------------
+def _patch_pandapower_paths():
+    if hasattr(sys, '_MEIPASS'):
+        real_pp_dir = os.path.join(sys._MEIPASS, "pandapower")
+        try:
+            import pandapower
+            pandapower.pp_dir = real_pp_dir
+        except Exception:
+            pass
+        modules_to_patch = [
+            "pandapower.networks.power_system_test_cases",
+            "pandapower.networks.mv_oberrhein",
+            "pandapower.networks.lv_schutterwald",
+            "pandapower.networks.ieee_european_lv_asymmetric",
+        ]
+        for mod_name in modules_to_patch:
+            try:
+                import importlib
+                mod = importlib.import_module(mod_name)
+                mod.pp_dir = real_pp_dir
+            except Exception:
+                pass
+
+_patch_pandapower_paths()
 
 import pandas as pd
 import pandapower as pp
@@ -33,7 +61,13 @@ from services.simulation import run_simulation as _run_simulation, _sanitize
 
 app = FastAPI(title="DLMP ABM Stochastic Scenario Lab Backend")
 
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+if hasattr(sys, '_MEIPASS'):
+    STATIC_DIR = os.path.join(sys._MEIPASS, "static")
+    # Include sys._MEIPASS in PATH so pandapower/pyomo can locate ipopt.exe
+    os.environ["PATH"] = sys._MEIPASS + os.path.pathsep + os.environ["PATH"]
+else:
+    STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+
 os.makedirs(STATIC_DIR, exist_ok=True)
 
 
@@ -494,3 +528,14 @@ async def upload_results_file(file: UploadFile = File(...)):
 # ---------------------------------------------------------------------------
 
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+
+if __name__ == "__main__":
+    import uvicorn
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="localhost")
+    parser.add_argument("--port", type=int, default=8501)
+    args = parser.parse_args()
+    
+    print(f"Starting FastAPI Web Server at http://{args.host}:{args.port}")
+    uvicorn.run(app, host=args.host, port=args.port)

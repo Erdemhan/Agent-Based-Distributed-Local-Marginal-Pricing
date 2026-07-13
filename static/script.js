@@ -1120,7 +1120,7 @@ async function runSimulation() {
         plot_bus_a: parseInt(document.getElementById("plot-bus-a").value) || 2,
         plot_bus_b: parseInt(document.getElementById("plot-bus-b").value) || 17,
         plot_bus_c: parseInt(document.getElementById("plot-bus-c").value) || 33,
-        scenario_generator: document.querySelector("input[name='scenario_generator']:checked")?.value || "matlab"
+        scenario_generator: document.querySelector("input[name='scenario_generator']:checked")?.value || "python"
     };
 
     // Save evaluated inputs to sessionStorage for persistence on refresh

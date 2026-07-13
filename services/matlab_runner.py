@@ -62,10 +62,33 @@ def generate_scenarios_via_matlab(params, global_config_df: pd.DataFrame) -> lis
     """
     import scipy.io as sio
 
-    matlab_dir = os.path.abspath("../tekil-simulasyon")
-    app_file_path = os.path.join(matlab_dir, "a_DLMP_v21.m")
-    if not os.path.exists(app_file_path):
-        raise FileNotFoundError(f"a_DLMP_v21.m not found at {app_file_path}")
+    import sys
+    
+    # Resolve the path of a_DLMP_v21.m using fallbacks
+    app_file_path = None
+    possible_paths = []
+    
+    # 1. Bundled inside the PyInstaller temporary folder
+    if hasattr(sys, '_MEIPASS'):
+        possible_paths.append(os.path.join(sys._MEIPASS, "matlab", "a_DLMP_v21.m"))
+    
+    # 2. Local matlab folder in workspace
+    possible_paths.append(os.path.abspath("matlab/a_DLMP_v21.m"))
+    
+    # 3. Developer directory (fallback)
+    possible_paths.append(os.path.abspath("../tekil-simulasyon/a_DLMP_v21.m"))
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            app_file_path = path
+            break
+            
+    if not app_file_path:
+        raise FileNotFoundError(
+            f"a_DLMP_v21.m could not be found in any of the search locations: {possible_paths}"
+        )
+        
+    matlab_dir = os.path.dirname(app_file_path)
 
     with open(app_file_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()

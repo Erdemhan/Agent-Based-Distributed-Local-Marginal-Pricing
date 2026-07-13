@@ -109,3 +109,13 @@ dlmp_config.mat
 # Antigravity / Agent IDE
 # ========================
 .agents/
+
+# ========================
+# Compilation & Standalone EXE Build
+# ========================
+build_distribution.py
+build_exe.bat
+DLMP_Lab.spec
+solvers/
+matlab/
+*.exe

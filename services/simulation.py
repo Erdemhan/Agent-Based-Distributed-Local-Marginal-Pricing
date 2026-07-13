@@ -263,7 +263,10 @@ def _run_python_scenario(mo: MarketOperator, params) -> tuple:
         load_config_from_dataframe(temp_config, mo, pdf_name=params.offer_pdf)
         summary = mo.run_market()
         return True, summary, load_scale
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"[DEBUG] _run_python_scenario failed: {e}")
+        traceback.print_exc()
         return False, {}, load_scale
 
 
